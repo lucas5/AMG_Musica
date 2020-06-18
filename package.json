@@ -1,11 +1,15 @@
 {
-  "name": "amg_music",
+  "name": "amg-music",
   "version": "1.0.0",
   "description": "",
-  "main": "musicBot.js",
+  "main": "index.js",
+  "engines": {
+    "node": "12.x",
+    "npm": "6.x"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "nodemon": "nodemon musicBot.js"
+    "nodemon": "nodemon index.js"
   },
   "author": "",
   "license": "ISC",
