@@ -1,11 +1,17 @@
-require('dotenv').config({ path: '../.env' })
+require('dotenv').config()
 
 const Discord = require("discord.js");
 const prefix = '!!';
+
 const token = process.env.TOKEN;
+const ytoken = process.env.YTOKEN;
+
 const ytdl = require("ytdl-core");
 const client = new Discord.Client();
 const queue = new Map();
+
+const axios = require('axios');
+
 
 client.once("ready", () => {
     console.log("Ready!");
@@ -23,7 +29,7 @@ client.on("message", async message => {
     if (message.author.bot) return;
     if (!message.content.startsWith(prefix)) return;
 
-    const serverQueue = queue.get(message.guild.id);
+    var serverQueue = queue.get(message.guild.id);
 
     if (message.content.startsWith(`${prefix}play`)) {
         execute(message, serverQueue);
@@ -38,14 +44,27 @@ client.on("message", async message => {
     else if (message.content.startsWith(`${prefix}queue`)) {
         queuee(message, serverQueue);
         return;
+    }
+    else if (message.content.startsWith(`${prefix}shuffle`)) {
+        serverQueue.songs = shuffle(serverQueue.songs);
+        return;
+    }
+    else if (message.content.startsWith(`${prefix}listplay`)) {
+        if (serverQueue !== undefined)
+            serverQueue.songs = [...serverQueue.songs, ...(await playlist(message, serverQueue))];
+        else
+            (await playlist(message, serverQueue))
+        return;
     } else {
         message.channel.send("You need to enter a valid command!");
     }
 });
 
 async function execute(message, serverQueue) {
-    const args = message.content.split(" ");
+
+    const args = message.content.split(' ');
     const voiceChannel = message.member.voice.channel;
+
     if (!voiceChannel)
         return message.channel.send(
             "You need to be in a voice channel to play music!"
@@ -57,17 +76,16 @@ async function execute(message, serverQueue) {
         );
     }
 
-    const songInfo = await ytdl.getInfo(args[1]);
+    let queryVideo = await getMusic(args);
 
-    console.log(songInfo.videoDetails);
-
-    const dr = parseInt(songInfo.videoDetails.lengthSeconds);
+    const songInfo = await ytdl.getInfo(queryVideo);
 
     const song = {
         title: songInfo.videoDetails.title,
         url: songInfo.videoDetails.video_url,
+        username: message.author.username,
+        discriminator: message.author.discriminator,
         thumbnail: songInfo.videoDetails.thumbnail.thumbnails[0].url,
-        duration: parseInt(dr / 60) + ':' + (dr % 60)
     };
 
     if (!serverQueue) {
@@ -103,8 +121,7 @@ async function execute(message, serverQueue) {
             .setAuthor("Música adicionada a fila")
             .setThumbnail(song.thumbnail)
             .addFields(
-                { name: 'Duração:', value: song.duration, inline: true },
-                { name: 'Solicitada por:', value: message.author.username + "#" + message.author.discriminator, inline: true },
+                { name: 'Solicitada por:', value: song.username + "#" + song.discriminator, inline: true },
             )
             .setTimestamp()
 
@@ -112,7 +129,53 @@ async function execute(message, serverQueue) {
     }
 }
 
+async function createServerQueue(message, musicList) {
+
+    const voiceChannel = message.member.voice.channel;
+
+    const queueContruct = {
+        textChannel: message.channel,
+        voiceChannel: voiceChannel,
+        connection: null,
+        songs: [],
+        volume: 5,
+        playing: true
+    };
+
+    queue.set(message.guild.id, queueContruct);
+
+    queueContruct.songs = [...queueContruct.songs, ...musicList];
+
+    try {
+        var connection = await voiceChannel.join();
+        queueContruct.connection = connection;
+        play(message.guild, queueContruct.songs[0], message.author);
+    } catch (err) {
+        console.log(err);
+        queue.delete(message.guild.id);
+        return message.channel.send(err);
+    }
+
+}
+
+async function getMusic(query) {
+
+    query.shift();
+    let videoName = query.join('_');
+
+    if (videoName.includes('https://'))
+        return videoName;
+
+    const result = await axios.get(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${videoName}&type=video&key=${ytoken}`)
+    let videoId = (result.data.items[0].id.videoId);
+
+    return 'https://www.youtube.com/watch?v=' + videoId;
+}
+
 function queuee(message, serverQueue) {
+
+    console.log(serverQueue.songs)
+
     var queueOutput = [];
     var count = 1;
     serverQueue.songs.forEach(function (entry) { // For each queue item
@@ -126,6 +189,53 @@ function queuee(message, serverQueue) {
         .addFields(queueOutput)
         .setTimestamp()
     message.channel.send(exampleEmbed);
+}
+
+function shuffle(songs) {
+    var currentIndex = songs.length, temporaryValue, randomIndex;
+    while (0 !== currentIndex) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex -= 1;
+
+        if (randomIndex !== 0 && currentIndex !== 0) {
+            temporaryValue = songs[currentIndex];
+            songs[currentIndex] = songs[randomIndex];
+            songs[randomIndex] = temporaryValue;
+        }
+    }
+    return songs;
+}
+
+async function playlist(message, serverQueue) {
+
+    let playlistUrl = message.content.split(' ')[1];
+
+    playlistUrl = playlistUrl.split('&');
+    playlistId = playlistUrl[1].split('=')[1];
+
+    const result = await axios.get(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${ytoken}`)
+
+    let musicArray = result.data.items;
+    let auxArray = [];
+
+    for (music of musicArray) {
+        songInfo = music.snippet;
+        let song = {
+            title: songInfo.title,
+            url: 'https://www.youtube.com/watch?v=' + songInfo.resourceId.videoId,
+            username: message.author.username,
+            discriminator: message.author.discriminator,
+            thumbnail: songInfo.thumbnails.default.url,
+        }
+        auxArray.push(song);
+    }
+
+    if (serverQueue === undefined) {
+        createServerQueue(message, auxArray);
+        return [];
+    }
+
+    return auxArray;
 }
 
 function skip(message, serverQueue) {
@@ -171,8 +281,7 @@ function play(guild, song, author) {
         .setAuthor("Tocando agora: ")
         .setThumbnail(song.thumbnail)
         .addFields(
-            { name: 'Duração:', value: song.duration, inline: true },
-            { name: 'Solicitada por:', value: author.username + "#" + author.discriminator, inline: true },
+            { name: 'Solicitada por:', value: song.username + "#" + song.discriminator, inline: true },
         )
         .setTimestamp()
 
