@@ -12,7 +12,6 @@ const queue = new Map();
 
 const axios = require('axios');
 
-
 client.once("ready", () => {
     console.log("Ready!");
 });
@@ -31,7 +30,14 @@ client.on("message", async message => {
 
     var serverQueue = queue.get(message.guild.id);
 
-    if (message.content.startsWith(`${prefix}p`)) {
+    if (message.content.startsWith(`${prefix}playlist`)) {
+        if (serverQueue !== undefined)
+            serverQueue.songs = [...serverQueue.songs, ...(await playlist(message, serverQueue))];
+        else
+            (await playlist(message, serverQueue))
+        return;
+    }
+    else if (message.content.startsWith(`${prefix}p`)) {
         execute(message, serverQueue);
         return;
     } else if (message.content.startsWith(`${prefix}skip`)) {
@@ -49,13 +55,7 @@ client.on("message", async message => {
         serverQueue.songs = shuffle(serverQueue.songs);
         return;
     }
-    else if (message.content.startsWith(`${prefix}playlist`)) {
-        if (serverQueue !== undefined)
-            serverQueue.songs = [...serverQueue.songs, ...(await playlist(message, serverQueue))];
-        else
-            (await playlist(message, serverQueue))
-        return;
-    } else {
+    else {
         message.channel.send("You need to enter a valid command!");
     }
 });
