@@ -31,7 +31,7 @@ client.on("message", async message => {
 
     var serverQueue = queue.get(message.guild.id);
 
-    if (message.content.startsWith(`${prefix}play`)) {
+    if (message.content.startsWith(`${prefix}p`)) {
         execute(message, serverQueue);
         return;
     } else if (message.content.startsWith(`${prefix}skip`)) {
@@ -49,7 +49,7 @@ client.on("message", async message => {
         serverQueue.songs = shuffle(serverQueue.songs);
         return;
     }
-    else if (message.content.startsWith(`${prefix}listplay`)) {
+    else if (message.content.startsWith(`${prefix}playlist`)) {
         if (serverQueue !== undefined)
             serverQueue.songs = [...serverQueue.songs, ...(await playlist(message, serverQueue))];
         else
@@ -166,10 +166,13 @@ async function getMusic(query) {
     if (videoName.includes('https://'))
         return videoName;
 
-    const result = await axios.get(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${videoName}&type=video&key=${ytoken}`)
-    let videoId = (result.data.items[0].id.videoId);
-
-    return 'https://www.youtube.com/watch?v=' + videoId;
+    try {
+        const result = await axios.get(`https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=1&q=${videoName}&type=video&key=${ytoken}`)
+        let videoId = (result.data.items[0].id.videoId);
+        return 'https://www.youtube.com/watch?v=' + videoId;
+    } catch (error) {
+        console.log(error);
+    }
 }
 
 function queuee(message, serverQueue) {
@@ -213,29 +216,35 @@ async function playlist(message, serverQueue) {
     playlistUrl = playlistUrl.split('&');
     playlistId = playlistUrl[1].split('=')[1];
 
-    const result = await axios.get(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${ytoken}`)
+    try {
+        const result = await axios.get(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${playlistId}&key=${ytoken}`)
+        let musicArray = result.data.items;
+        let auxArray = [];
 
-    let musicArray = result.data.items;
-    let auxArray = [];
-
-    for (music of musicArray) {
-        songInfo = music.snippet;
-        let song = {
-            title: songInfo.title,
-            url: 'https://www.youtube.com/watch?v=' + songInfo.resourceId.videoId,
-            username: message.author.username,
-            discriminator: message.author.discriminator,
-            thumbnail: songInfo.thumbnails.default.url,
+        for (music of musicArray) {
+            songInfo = music.snippet;
+            let song = {
+                title: songInfo.title,
+                url: 'https://www.youtube.com/watch?v=' + songInfo.resourceId.videoId,
+                username: message.author.username,
+                discriminator: message.author.discriminator,
+                thumbnail: songInfo.thumbnails.default.url,
+            }
+            auxArray.push(song);
         }
-        auxArray.push(song);
+
+        if (serverQueue === undefined) {
+            createServerQueue(message, auxArray);
+            return [];
+        }
+
+        return auxArray;
+
+    } catch (error) {
+        console.log(error);
     }
 
-    if (serverQueue === undefined) {
-        createServerQueue(message, auxArray);
-        return [];
-    }
-
-    return auxArray;
+    return []
 }
 
 function skip(message, serverQueue) {
